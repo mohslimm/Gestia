@@ -1,0 +1,99 @@
+{
+  "name": "Gestia - Rapport Mensuel IA (1er du mois)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 6 1 * *"
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Cron 1er du mois",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, email, full_name, plan FROM profiles WHERE plan IN ('pro', 'investor')"
+      },
+      "id": "2",
+      "name": "Fetch Eligible Owners",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.2,
+      "position": [450, 300],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_DB_CREDENTIALS",
+          "name": "Supabase Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:3000/api/ai/generate-report",
+        "method": "POST",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer INTERNAL_N8N_SECRET_TOKEN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "owner_id",
+              "value": "={{$json.id}}"
+            }
+          ]
+        }
+      },
+      "id": "3",
+      "name": "Trigger API Generate Report",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "rapports@gestia.com",
+        "toEmail": "={{$json.email}}",
+        "subject": "Votre rapport IA de performance locative de ce mois est disponible",
+        "html": "Bonjour {{$json.full_name}},<br>L'IA Gestia a analysé vos revenus, dépenses et incidents du mois écoulé.<br>Découvrez le résumé complet dans votre tableau de bord."
+      },
+      "id": "4",
+      "name": "Email Owner",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [850, 300],
+      "credentials": {
+        "smtp": {
+          "id": "RESEND_CREDENTIALS",
+          "name": "Resend SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Cron 1er du mois": {
+      "main": [[{"node": "Fetch Eligible Owners", "type": "main", "index": 0}]]
+    },
+    "Fetch Eligible Owners": {
+      "main": [[{"node": "Trigger API Generate Report", "type": "main", "index": 0}]]
+    },
+    "Trigger API Generate Report": {
+      "main": [[{"node": "Email Owner", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {}
+}

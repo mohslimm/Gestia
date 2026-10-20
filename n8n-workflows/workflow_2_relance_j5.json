@@ -1,0 +1,109 @@
+{
+  "name": "Gestia - Relance Impayé (J+5)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Cron Quotidien",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT p.*, t.email, t.full_name, pr.email as owner_email FROM payments p JOIN leases l ON p.lease_id = l.id JOIN tenants t ON l.tenant_id = t.id JOIN units u ON l.unit_id = u.id JOIN properties prop ON u.property_id = prop.id JOIN profiles pr ON prop.owner_id = pr.id WHERE p.due_date < CURRENT_DATE - INTERVAL '5 days' AND p.status != 'paid' AND p.reminder_2_sent IS NULL"
+      },
+      "id": "2",
+      "name": "Fetch Late Payments",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.2,
+      "position": [450, 300],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_DB_CREDENTIALS",
+          "name": "Supabase Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "gestia@votre-domaine.com",
+        "toEmail": "={{$json.email}}",
+        "subject": "URGENT : Retard de paiement de votre loyer",
+        "html": "Bonjour {{$json.full_name}},<br>Sauf erreur de notre part, nous n'avons pas reçu votre loyer de {{$json.amount}}€ arrivé à échéance le {{$json.due_date}}.<br>Merci de régulariser la situation dans les plus brefs délais."
+      },
+      "id": "3",
+      "name": "Email Locataire",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [650, 200],
+      "credentials": {
+        "smtp": {
+          "id": "RESEND_CREDENTIALS",
+          "name": "Resend SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "gestia-system@votre-domaine.com",
+        "toEmail": "={{$json.owner_email}}",
+        "subject": "Notification de retard de loyer",
+        "html": "Une relance automatique a été envoyée à {{$json.full_name}} pour un retard de paiement. Le loyer de {{$json.amount}}€ devait être réglé le {{$json.due_date}}."
+      },
+      "id": "4",
+      "name": "Email Propriétaire",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [650, 400],
+      "credentials": {
+        "smtp": {
+          "id": "RESEND_CREDENTIALS",
+          "name": "Resend SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE payments SET reminder_2_sent = NOW() WHERE id = '{{$json.id}}'"
+      },
+      "id": "5",
+      "name": "Mark as Sent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.2,
+      "position": [850, 300],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_DB_CREDENTIALS",
+          "name": "Supabase Postgres"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Cron Quotidien": {
+      "main": [[{"node": "Fetch Late Payments", "type": "main", "index": 0}]]
+    },
+    "Fetch Late Payments": {
+      "main": [
+        [{"node": "Email Locataire", "type": "main", "index": 0}],
+        [{"node": "Email Propriétaire", "type": "main", "index": 0}]
+      ]
+    },
+    "Email Locataire": {
+      "main": [[{"node": "Mark as Sent", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {}
+}

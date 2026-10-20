@@ -1,0 +1,87 @@
+{
+  "name": "Gestia - Alertes Renouvellement Bail",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 7 * * *"
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Cron Quotidien",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT l.*, p.email as owner_email, t.full_name as tenant_name, u.unit_number, prop.name as property_name FROM leases l JOIN units u ON l.unit_id = u.id JOIN properties prop ON u.property_id = prop.id JOIN profiles p ON prop.owner_id = p.id JOIN tenants t ON l.tenant_id = t.id WHERE (l.end_date = CURRENT_DATE + INTERVAL '90 days' OR l.end_date = CURRENT_DATE + INTERVAL '60 days' OR l.end_date = CURRENT_DATE + INTERVAL '30 days') AND l.renewal_sent_at IS NULL"
+      },
+      "id": "2",
+      "name": "Fetch Leases Ending Soon",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.2,
+      "position": [450, 300],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_DB_CREDENTIALS",
+          "name": "Supabase Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "gestia-alerte@votre-domaine.com",
+        "toEmail": "={{$json.owner_email}}",
+        "subject": "Renouvellement imminent : Bail de {{$json.tenant_name}}",
+        "html": "Bonjour,<br>Le bail de {{$json.tenant_name}} pour le lot <b>{{$json.unit_number}}</b> ({{$json.property_name}}) expire le <b>{{$json.end_date}}</b>.<br><br>Générez dès maintenant le préavis ou la proposition de renouvellement."
+      },
+      "id": "3",
+      "name": "Email Propriétaire",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [650, 300],
+      "credentials": {
+        "smtp": {
+          "id": "RESEND_CREDENTIALS",
+          "name": "Resend SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE leases SET renewal_sent_at = NOW() WHERE id = '{{$json.id}}'"
+      },
+      "id": "4",
+      "name": "Mark as Notified",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.2,
+      "position": [850, 300],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_DB_CREDENTIALS",
+          "name": "Supabase Postgres"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Cron Quotidien": {
+      "main": [[{"node": "Fetch Leases Ending Soon", "type": "main", "index": 0}]]
+    },
+    "Fetch Leases Ending Soon": {
+      "main": [[{"node": "Email Propriétaire", "type": "main", "index": 0}]]
+    },
+    "Email Propriétaire": {
+      "main": [[{"node": "Mark as Notified", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {}
+}

@@ -1,0 +1,108 @@
+{
+  "name": "Gestia - Rappels Loyer (J-2)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 8 * * *"
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Cron Quotidien",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT p.*, t.email, t.phone, t.full_name FROM payments p JOIN leases l ON p.lease_id = l.id JOIN tenants t ON l.tenant_id = t.id WHERE p.due_date = CURRENT_DATE + INTERVAL '2 days' AND p.reminder_1_sent IS NULL"
+      },
+      "id": "2",
+      "name": "Fetch Payments",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.2,
+      "position": [450, 300],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_DB_CREDENTIALS",
+          "name": "Supabase Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "gestia@votre-domaine.com",
+        "toEmail": "={{$json.email}}",
+        "subject": "Votre loyer arrive à échéance dans 2 jours",
+        "html": "Bonjour {{$json.full_name}},<br>Votre loyer de {{$json.amount}}€ arrive à échéance le {{$json.due_date}}.<br>Merci de prévoir le paiement."
+      },
+      "id": "3",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [650, 150],
+      "credentials": {
+        "smtp": {
+          "id": "RESEND_CREDENTIALS",
+          "name": "Resend SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "from": "GESTIA",
+        "to": "={{$json.phone}}",
+        "message": "Bonjour {{$json.full_name}}, le loyer de {{$json.amount}}€ pour votre logement Gestia arrive à échéance dans 2 jours. Merci !"
+      },
+      "id": "4",
+      "name": "Send SMS",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [650, 450],
+      "credentials": {
+        "twilioApi": {
+          "id": "TWILIO_CREDENTIALS",
+          "name": "Twilio Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE payments SET reminder_1_sent = NOW() WHERE id = '{{$json.id}}'"
+      },
+      "id": "5",
+      "name": "Mark as Sent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.2,
+      "position": [850, 300],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_DB_CREDENTIALS",
+          "name": "Supabase Postgres"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Cron Quotidien": {
+      "main": [[{"node": "Fetch Payments", "type": "main", "index": 0}]]
+    },
+    "Fetch Payments": {
+      "main": [
+        [{"node": "Send Email", "type": "main", "index": 0}],
+        [{"node": "Send SMS", "type": "main", "index": 0}]
+      ]
+    },
+    "Send Email": {
+      "main": [[{"node": "Mark as Sent", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {}
+}

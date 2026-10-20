@@ -1,0 +1,87 @@
+{
+  "name": "Gestia - Alerte Critique (J+10)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 10 * * *"
+            }
+          ]
+        }
+      },
+      "id": "1",
+      "name": "Cron Quotidien",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT p.*, t.full_name, pr.email as owner_email FROM payments p JOIN leases l ON p.lease_id = l.id JOIN tenants t ON l.tenant_id = t.id JOIN units u ON l.unit_id = u.id JOIN properties prop ON u.property_id = prop.id JOIN profiles pr ON prop.owner_id = pr.id WHERE p.due_date < CURRENT_DATE - INTERVAL '10 days' AND p.status != 'paid' AND p.reminder_3_sent IS NULL"
+      },
+      "id": "2",
+      "name": "Fetch Critical Late Payments",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.2,
+      "position": [450, 300],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_DB_CREDENTIALS",
+          "name": "Supabase Postgres"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "alerte@gestia.com",
+        "toEmail": "={{$json.owner_email}}",
+        "subject": "ALERTE : Retard critique de paiement (> 10 jours)",
+        "html": "Attention, le locataire {{$json.full_name}} a plus de 10 jours de retard sur le paiement de son loyer ({{$json.amount}}€). Nous vous recommandons de prendre contact avec le garant ou d'entamer les démarches nécessaires."
+      },
+      "id": "3",
+      "name": "Email Propriétaire",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [650, 300],
+      "credentials": {
+        "smtp": {
+          "id": "RESEND_CREDENTIALS",
+          "name": "Resend SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE payments SET reminder_3_sent = NOW() WHERE id = '{{$json.id}}'"
+      },
+      "id": "4",
+      "name": "Mark as Sent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.2,
+      "position": [850, 300],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_DB_CREDENTIALS",
+          "name": "Supabase Postgres"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Cron Quotidien": {
+      "main": [[{"node": "Fetch Critical Late Payments", "type": "main", "index": 0}]]
+    },
+    "Fetch Critical Late Payments": {
+      "main": [[{"node": "Email Propriétaire", "type": "main", "index": 0}]]
+    },
+    "Email Propriétaire": {
+      "main": [[{"node": "Mark as Sent", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {}
+}
